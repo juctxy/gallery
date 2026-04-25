@@ -1,1 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Image Gallery</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0e0e0e; --surface: #171717; --border: #2a2a2a;
+      --accent: #c8f04a; --muted: #555; --text: #e8e8e8;
+      --font-mono: 'DM Mono', monospace; --font-disp: 'Fraunces', serif;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; }
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(14,14,14,0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border); padding: 0 2rem; height: 56px;
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    }
+    .header-title { font-family: var(--font-disp); font-weight: 600; font-size: 1.1rem; color: var(--text); white-space: nowrap; }
+    .header-title span { color: var(--accent); font-style: italic; }
+    .stats { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+    .stats b { color: var(--accent); font-weight: 500; }
+    .search-wrap { flex: 1; max-width: 320px; position: relative; }
+    .search-wrap input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-family: var(--font-mono);
+      font-size: 0.78rem; padding: 6px 12px 6px 32px; outline: none; transition: border-color 0.2s;
+    }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .search-wrap::before {
+      content: '⌕'; position: absolute; left: 10px; top: 50%;
+      transform: translateY(-50%); color: var(--muted); font-size: 1rem; pointer-events: none;
+    }
+    main { padding: 2rem; }
+    #ai-manifest { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: pre; }
+    #status { font-size: 0.75rem; color: var(--muted); margin-bottom: 1.5rem; min-height: 1.2em; }
+    #status.error { color: #ff6b6b; }
+    #gallery { columns: 5 180px; column-gap: 10px; }
+    .img-card {
+      break-inside: avoid; margin-bottom: 10px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+      transition: border-color 0.2s, transform 0.2s; cursor: pointer; animation: fadeIn 0.4s ease both;
+    }
+    .img-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .img-card img { width: 100%; display: block; background: #1a1a1a; min-height: 80px; }
+    .img-label { padding: 5px 8px; font-size: 0.62rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--border); }
+    .img-label b { font-size: 0.68rem; color: var(--text); font-weight: 500; display: block; }
+    #lightbox {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.93); align-items: center; justify-content: center;
+      flex-direction: column; gap: 1rem; padding: 2rem;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img { max-width: 90vw; max-height: 80vh; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); }
+    #lb-info { font-size: 0.78rem; color: var(--muted); text-align: center; }
+    #lb-info b { color: var(--accent); }
+    #lb-close {
+      position: absolute; top: 1.2rem; right: 1.5rem; background: none;
+      border: 1px solid var(--border); color: var(--text); font-family: var(--font-mono);
+      font-size: 0.8rem; padding: 4px 12px; border-radius: 4px; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    }
+    #lb-close:hover { border-color: var(--accent); color: var(--accent); }
+    #empty { display: none; text-align: center; padding: 5rem 2rem; color: var(--muted); }
+    #empty h2 { font-family: var(--font-disp); font-size: 2rem; font-weight: 300; font-style: italic; margin-bottom: 0.5rem; color: #333; }
+    #loader { text-align: center; padding: 5rem; color: var(--muted); font-size: 0.8rem; }
+    .dot { animation: blink 1.2s infinite; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
 
+<!-- AI/scraper readable manifest -->
+<div id="ai-manifest" aria-label="image-manifest"></div>
+
+<header>
+  <div class="header-title">Gallery <span>/ images</span></div>
+  <div class="search-wrap">
+    <input type="text" id="searchInput" placeholder="Search by filename…" oninput="filterGallery(this.value)" />
+  </div>
+  <div class="stats" id="headerStats">Loading…</div>
+</header>
+
+<main>
+  <div id="status"></div>
+  <div id="loader">Loading images<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+  <div id="gallery"></div>
+  <div id="empty"><h2>No results</h2><p>Try a different search term.</p></div>
+</main>
+
+<div id="lightbox">
+  <button id="lb-close" onclick="closeLightbox()">✕ close</button>
+  <img id="lb-img" src="" alt="" />
+  <div id="lb-info"></div>
+</div>
+
+<script>
+  // Path to images folder and manifest — relative to THIS file's location
+  const IMAGES_FOLDER = 'images/';
+  const MANIFEST_URL  = 'images/images.json';
+
+  let allImages = [], currentIndex = 0;
+
+  async function loadGallery() {
+    try {
+      const res = await fetch(MANIFEST_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status} — images.json not found`);
+      const data = await res.json();
+      allImages = Array.isArray(data) ? data : (data.images || []);
+      if (allImages.length === 0) throw new Error('images.json is empty.');
+
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('status').textContent = `${allImages.length} images loaded`;
+      document.getElementById('ai-manifest').textContent =
+        `TOTAL: ${allImages.length} images\n` + allImages.map((f, i) => `${i+1}. ${f}`).join('\n');
+      renderGallery(allImages);
+    } catch (err) {
+      document.getElementById('loader').style.display = 'none';
+      const s = document.getElementById('status');
+      s.className = 'error';
+      s.textContent = `⚠ ${err.message}`;
+    }
+  }
+
+  function renderGallery(list) {
+    const gallery = document.getElementById('gallery');
+    gallery.innerHTML = '';
+    document.getElementById('empty').style.display = list.length === 0 ? 'block' : 'none';
+    document.getElementById('headerStats').innerHTML = `<b>${list.length}</b> / ${allImages.length} images`;
+    list.forEach((filename, i) => {
+      const realIndex = allImages.indexOf(filename);
+      const card = document.createElement('div');
+      card.className = 'img-card';
+      card.style.animationDelay = Math.min(i * 6, 300) + 'ms';
+      card.innerHTML = `
+        <img src="${IMAGES_FOLDER}${filename}" alt="${filename}" loading="lazy" onerror="this.style.opacity='0.15'" />
+        <div class="img-label"><b>#${realIndex + 1}</b>${filename}</div>`;
+      card.addEventListener('click', () => openLightbox(realIndex));
+      gallery.appendChild(card);
+    });
+  }
+
+  function filterGallery(query) {
+    const q = query.trim().toLowerCase();
+    renderGallery(q ? allImages.filter(f => f.toLowerCase().includes(q)) : allImages);
+  }
+
+  function openLightbox(index) {
+    currentIndex = index;
+    const filename = allImages[index];
+    document.getElementById('lb-img').src = IMAGES_FOLDER + filename;
+    document.getElementById('lb-img').alt = filename;
+    document.getElementById('lb-info').innerHTML = `<b>${filename}</b> &nbsp;·&nbsp; ${index + 1} of ${allImages.length}`;
+    document.getElementById('lightbox').classList.add('open');
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('open');
+    document.getElementById('lb-img').src = '';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!document.getElementById('lightbox').classList.contains('open')) return;
+    if (e.key === 'Escape')     closeLightbox();
+    if (e.key === 'ArrowRight') openLightbox((currentIndex + 1) % allImages.length);
+    if (e.key === 'ArrowLeft')  openLightbox((currentIndex - 1 + allImages.length) % allImages.length);
+  });
+  document.getElementById('lightbox').addEventListener('click', e => {
+    if (e.target === document.getElementById('lightbox')) closeLightbox();
+  });
+
+  loadGallery();
+</script>
+</body>
+</html>
