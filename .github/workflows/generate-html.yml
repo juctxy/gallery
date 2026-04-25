@@ -1,58 +1,44 @@
-name: Generate Static Gallery HTML
-
-on:
-  push:
-    paths:
-      - 'images/**'
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Generate static index.html from images.json
+- name: Generate static index.html from images.json
         run: |
           python3 - <<'PYEOF'
           import os, json
+          from urllib.parse import quote, unquote
 
           folder = "images"
-          exts = {".jpg",".jpeg",".png",".gif",".webp",".bmp",".svg",".avif"}
+          exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".avif"}
 
-          # Auto-regenerate images.json first
+          # 1. Get raw filenames from disk
           files = sorted([
             f for f in os.listdir(folder)
             if os.path.splitext(f)[1].lower() in exts
           ])
-          with open(f"{folder}/images.json", "w") as fp:
-            json.dump(files, fp, indent=2)
-          print(f"✅ images.json: {len(files)} images")
 
-          # Build image cards HTML
+          # 2. Update images.json (bookkeeping)
+          with open(f"{folder}/images.json", "w", encoding="utf-8") as fp:
+            json.dump(files, fp, indent=2)
+          print(f"✅ images.json updated: {len(files)} images")
+
+          # 3. Build image cards HTML
           cards = ""
           for i, filename in enumerate(files):
-            from urllib.parse import quote, unquote
-            encoded = quote(filename, safe='%')   # FIX: don't re-encode existing %20 etc.
-            display = unquote(filename)           # human-readable label
+            # FIX: Remove safe='%' so that literal '%' in filenames are properly escaped to '%25'
+            encoded = quote(filename) 
+            # Use unquote for display so the label looks clean (e.g., shows spaces instead of %20)
+            display = unquote(filename)
+            
             cards += f'''
             <div class="img-card">
               <img src="images/{encoded}" alt="{display}" loading="lazy" onerror="this.style.opacity='0.15'" />
               <div class="img-label"><b>#{i+1}</b>{display}</div>
             </div>'''
 
+          # 4. Generate the full HTML (Using double braces {{ }} for CSS to avoid f-string conflicts)
           html = f"""<!DOCTYPE html>
           <html lang="en">
           <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
             <title>Image Gallery</title>
-            <meta name="description" content="Gallery of {len(files)} images"/>
-            <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet"/>
             <style>
               *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
               :root{{
@@ -114,10 +100,6 @@ jobs:
               }}
               #lb-close:hover{{border-color:var(--accent);color:var(--accent)}}
               #empty{{display:none;text-align:center;padding:5rem 2rem;color:var(--muted)}}
-              #empty h2{{font-family:var(--font-disp);font-size:2rem;font-weight:300;font-style:italic;color:#333}}
-              ::-webkit-scrollbar{{width:6px}}
-              ::-webkit-scrollbar-track{{background:var(--bg)}}
-              ::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
             </style>
           </head>
           <body>
@@ -130,18 +112,17 @@ jobs:
           </header>
           <main>
             <div id="status">{len(files)} images loaded</div>
-            <div id="gallery">{cards}
-            </div>
-            <div id="empty"><h2>No results</h2><p>Try a different search term.</p></div>
+            <div id="gallery">{cards}</div>
+            <div id="empty"><h2>No images found</h2><p>Try a different search term</p></div>
           </main>
           <div id="lightbox">
-            <button id="lb-close" onclick="closeLightbox()">✕ close</button>
+            <button id="lb-close" onclick="closeLightbox()">Close</button>
             <img id="lb-img" src="" alt=""/>
             <div id="lb-info"></div>
           </div>
           <script>
             const allCards = Array.from(document.querySelectorAll('.img-card'));
-            const statsEl  = document.querySelector('.stats');
+            const statsEl = document.querySelector('.stats');
 
             function filterGallery(q) {{
               q = q.trim().toLowerCase();
@@ -177,25 +158,11 @@ jobs:
               if (!document.getElementById('lightbox').classList.contains('open')) return;
               if (e.key === 'Escape') closeLightbox();
             }});
-            document.getElementById('lightbox').addEventListener('click', e => {{
-              if (e.target === document.getElementById('lightbox')) closeLightbox();
-            }});
           </script>
           </body>
           </html>"""
-
-          import re
-          html = re.sub(r'\n\s{10}', '\n', html)
 
           with open("index.html", "w", encoding="utf-8") as f:
             f.write(html)
           print(f"✅ index.html generated with {len(files)} images")
           PYEOF
-
-      - name: Commit and push
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html images/images.json
-          git diff --cached --quiet || git commit -m "chore: regenerate static gallery [skip ci]"
-          git push
