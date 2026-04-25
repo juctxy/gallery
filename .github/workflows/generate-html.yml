@@ -1,0 +1,203 @@
+name: Generate Static Gallery HTML
+
+on:
+  push:
+    paths:
+      - 'images/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Generate static index.html from images.json
+        run: |
+          python3 - <<'PYEOF'
+          import os, json
+
+          folder = "images"
+          exts = {".jpg",".jpeg",".png",".gif",".webp",".bmp",".svg",".avif"}
+
+          # Auto-regenerate images.json first
+          files = sorted([
+            f for f in os.listdir(folder)
+            if os.path.splitext(f)[1].lower() in exts
+          ])
+          with open(f"{folder}/images.json", "w") as fp:
+            json.dump(files, fp, indent=2)
+          print(f"✅ images.json: {len(files)} images")
+
+          # Build image cards HTML
+          cards = ""
+          for i, filename in enumerate(files):
+            from urllib.parse import quote
+            encoded = quote(filename)
+            display = filename.replace("%20", " ")
+            cards += f'''
+            <div class="img-card">
+              <img src="images/{encoded}" alt="{display}" loading="lazy" onerror="this.style.opacity='0.15'" />
+              <div class="img-label"><b>#{i+1}</b>{display}</div>
+            </div>'''
+
+          html = f"""<!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <title>Image Gallery</title>
+            <meta name="description" content="Gallery of {len(files)} images"/>
+            <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet"/>
+            <style>
+              *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+              :root{{
+                --bg:#0e0e0e;--surface:#171717;--border:#2a2a2a;
+                --accent:#c8f04a;--muted:#555;--text:#e8e8e8;
+                --font-mono:'DM Mono',monospace;--font-disp:'Fraunces',serif;
+              }}
+              body{{background:var(--bg);color:var(--text);font-family:var(--font-mono);min-height:100vh}}
+              header{{
+                position:sticky;top:0;z-index:100;
+                background:rgba(14,14,14,0.92);backdrop-filter:blur(12px);
+                border-bottom:1px solid var(--border);padding:0 2rem;height:56px;
+                display:flex;align-items:center;justify-content:space-between;gap:1rem;
+              }}
+              .header-title{{font-family:var(--font-disp);font-weight:600;font-size:1.1rem;color:var(--text)}}
+              .header-title span{{color:var(--accent);font-style:italic}}
+              .stats{{font-size:0.72rem;color:var(--muted)}}
+              .stats b{{color:var(--accent);font-weight:500}}
+              .search-wrap{{flex:1;max-width:320px;position:relative}}
+              .search-wrap input{{
+                width:100%;background:var(--surface);border:1px solid var(--border);
+                border-radius:6px;color:var(--text);font-family:var(--font-mono);
+                font-size:0.78rem;padding:6px 12px 6px 32px;outline:none;transition:border-color 0.2s;
+              }}
+              .search-wrap input:focus{{border-color:var(--accent)}}
+              .search-wrap::before{{
+                content:'⌕';position:absolute;left:10px;top:50%;
+                transform:translateY(-50%);color:var(--muted);font-size:1rem;pointer-events:none;
+              }}
+              main{{padding:2rem}}
+              #status{{font-size:0.75rem;color:var(--muted);margin-bottom:1.5rem}}
+              #gallery{{columns:5 180px;column-gap:10px}}
+              .img-card{{
+                break-inside:avoid;margin-bottom:10px;background:var(--surface);
+                border:1px solid var(--border);border-radius:8px;overflow:hidden;
+                transition:border-color 0.2s,transform 0.2s;cursor:pointer;
+              }}
+              .img-card:hover{{border-color:var(--accent);transform:translateY(-2px)}}
+              .img-card img{{width:100%;display:block;background:#1a1a1a;min-height:80px}}
+              .img-label{{
+                padding:5px 8px;font-size:0.62rem;color:var(--muted);
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                border-top:1px solid var(--border);
+              }}
+              .img-label b{{font-size:0.68rem;color:var(--text);font-weight:500;display:block}}
+              #lightbox{{
+                display:none;position:fixed;inset:0;z-index:1000;
+                background:rgba(0,0,0,0.93);align-items:center;justify-content:center;
+                flex-direction:column;gap:1rem;padding:2rem;
+              }}
+              #lightbox.open{{display:flex}}
+              #lightbox img{{max-width:90vw;max-height:80vh;object-fit:contain;border-radius:6px;border:1px solid var(--border)}}
+              #lb-info{{font-size:0.78rem;color:var(--muted);text-align:center}}
+              #lb-info b{{color:var(--accent)}}
+              #lb-close{{
+                position:absolute;top:1.2rem;right:1.5rem;background:none;
+                border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);
+                font-size:0.8rem;padding:4px 12px;border-radius:4px;cursor:pointer;
+              }}
+              #lb-close:hover{{border-color:var(--accent);color:var(--accent)}}
+              #empty{{display:none;text-align:center;padding:5rem 2rem;color:var(--muted)}}
+              #empty h2{{font-family:var(--font-disp);font-size:2rem;font-weight:300;font-style:italic;color:#333}}
+              ::-webkit-scrollbar{{width:6px}}
+              ::-webkit-scrollbar-track{{background:var(--bg)}}
+              ::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
+            </style>
+          </head>
+          <body>
+          <header>
+            <div class="header-title">Gallery <span>/ images</span></div>
+            <div class="search-wrap">
+              <input type="text" id="searchInput" placeholder="Search by filename…" oninput="filterGallery(this.value)"/>
+            </div>
+            <div class="stats"><b>{len(files)}</b> / {len(files)} images</div>
+          </header>
+          <main>
+            <div id="status">{len(files)} images loaded</div>
+            <div id="gallery">{cards}
+            </div>
+            <div id="empty"><h2>No results</h2><p>Try a different search term.</p></div>
+          </main>
+          <div id="lightbox">
+            <button id="lb-close" onclick="closeLightbox()">✕ close</button>
+            <img id="lb-img" src="" alt=""/>
+            <div id="lb-info"></div>
+          </div>
+          <script>
+            const allCards = Array.from(document.querySelectorAll('.img-card'));
+            const statsEl  = document.querySelector('.stats');
+
+            function filterGallery(q) {{
+              q = q.trim().toLowerCase();
+              let count = 0;
+              allCards.forEach(card => {{
+                const name = card.querySelector('.img-label').textContent.toLowerCase();
+                const show = !q || name.includes(q);
+                card.style.display = show ? '' : 'none';
+                if (show) count++;
+              }});
+              statsEl.innerHTML = '<b>' + count + '</b> / {len(files)} images';
+              document.getElementById('empty').style.display = count === 0 ? 'block' : 'none';
+            }}
+
+            allCards.forEach(card => {{
+              card.addEventListener('click', () => {{
+                const img  = card.querySelector('img');
+                const name = card.querySelector('.img-label').textContent.trim();
+                const idx  = allCards.indexOf(card) + 1;
+                document.getElementById('lb-img').src = img.src;
+                document.getElementById('lb-img').alt = name;
+                document.getElementById('lb-info').innerHTML = '<b>' + name + '</b> &nbsp;·&nbsp; ' + idx + ' of {len(files)}';
+                document.getElementById('lightbox').classList.add('open');
+              }});
+            }});
+
+            function closeLightbox() {{
+              document.getElementById('lightbox').classList.remove('open');
+              document.getElementById('lb-img').src = '';
+            }}
+
+            document.addEventListener('keydown', e => {{
+              if (!document.getElementById('lightbox').classList.contains('open')) return;
+              if (e.key === 'Escape') closeLightbox();
+            }});
+            document.getElementById('lightbox').addEventListener('click', e => {{
+              if (e.target === document.getElementById('lightbox')) closeLightbox();
+            }});
+          </script>
+          </body>
+          </html>"""
+
+          # Write cleaned-up html
+          import re
+          # remove leading spaces from multiline string
+          html = re.sub(r'\n\s{10}', '\n', html)
+
+          with open("index.html", "w", encoding="utf-8") as f:
+            f.write(html)
+          print(f"✅ index.html generated with {len(files)} images")
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html images/images.json
+          git diff --cached --quiet || git commit -m "chore: regenerate static gallery [skip ci]"
+          git push
