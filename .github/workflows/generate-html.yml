@@ -36,9 +36,9 @@ jobs:
           # Build image cards HTML
           cards = ""
           for i, filename in enumerate(files):
-            from urllib.parse import quote
-            encoded = quote(filename)
-            display = filename.replace("%20", " ")
+            from urllib.parse import quote, unquote
+            encoded = quote(filename, safe='%')   # FIX: don't re-encode existing %20 etc.
+            display = unquote(filename)           # human-readable label
             cards += f'''
             <div class="img-card">
               <img src="images/{encoded}" alt="{display}" loading="lazy" onerror="this.style.opacity='0.15'" />
@@ -184,9 +184,7 @@ jobs:
           </body>
           </html>"""
 
-          # Write cleaned-up html
           import re
-          # remove leading spaces from multiline string
           html = re.sub(r'\n\s{10}', '\n', html)
 
           with open("index.html", "w", encoding="utf-8") as f:
