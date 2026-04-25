@@ -137,13 +137,13 @@
     document.getElementById('headerStats').innerHTML = `<b>${list.length}</b> / ${allImages.length} images`;
     list.forEach((filename, i) => {
       const realIndex = allImages.indexOf(filename);
-      const encodedSrc = IMAGES_FOLDER + encodeURIComponent(filename);
       const card = document.createElement('div');
       card.className = 'img-card';
       card.style.animationDelay = Math.min(i * 6, 300) + 'ms';
+      const displayName = decodeURIComponent(filename);
       card.innerHTML = `
-        <img src="${encodedSrc}" alt="${filename}" loading="lazy" onerror="this.style.opacity='0.15'" />
-        <div class="img-label"><b>#${realIndex + 1}</b>${filename}</div>`;
+        <img src="${IMAGES_FOLDER}${filename}" alt="${displayName}" loading="lazy" onerror="this.style.opacity='0.15'" />
+        <div class="img-label"><b>#${realIndex + 1}</b>${displayName}</div>`;
       card.addEventListener('click', () => openLightbox(realIndex));
       gallery.appendChild(card);
     });
@@ -157,9 +157,9 @@
   function openLightbox(index) {
     currentIndex = index;
     const filename = allImages[index];
-    document.getElementById('lb-img').src = IMAGES_FOLDER + encodeURIComponent(filename);
-    document.getElementById('lb-img').alt = filename;
-    document.getElementById('lb-info').innerHTML = `<b>${filename}</b> &nbsp;·&nbsp; ${index + 1} of ${allImages.length}`;
+    document.getElementById('lb-img').src = IMAGES_FOLDER + filename;
+    document.getElementById('lb-img').alt = decodeURIComponent(filename);
+    document.getElementById('lb-info').innerHTML = `<b>${decodeURIComponent(filename)}</b> &nbsp;·&nbsp; ${index + 1} of ${allImages.length}`;
     document.getElementById('lightbox').classList.add('open');
   }
 
