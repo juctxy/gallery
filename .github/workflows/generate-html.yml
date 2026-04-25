@@ -1,4 +1,22 @@
-- name: Generate static index.html from images.json
+name: Generate Static Gallery HTML
+
+on:
+  push:
+    paths:
+      - 'images/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Generate static index.html and update images.json
         run: |
           python3 - <<'PYEOF'
           import os, json
@@ -13,7 +31,7 @@
             if os.path.splitext(f)[1].lower() in exts
           ])
 
-          # 2. Update images.json (bookkeeping)
+          # 2. Update images.json (Keep this for your other tools/scripts)
           with open(f"{folder}/images.json", "w", encoding="utf-8") as fp:
             json.dump(files, fp, indent=2)
           print(f"✅ images.json updated: {len(files)} images")
@@ -21,24 +39,28 @@
           # 3. Build image cards HTML
           cards = ""
           for i, filename in enumerate(files):
-            # FIX: Remove safe='%' so that literal '%' in filenames are properly escaped to '%25'
-            encoded = quote(filename) 
-            # Use unquote for display so the label looks clean (e.g., shows spaces instead of %20)
-            display = unquote(filename)
+            # FIX: We do NOT use safe='%'. 
+            # This ensures literal '%' in your filenames are encoded to '%25'
+            encoded_url = quote(filename) 
+            
+            # Use unquote for the text label so it looks nice (shows spaces, not %20)
+            display_name = unquote(filename)
             
             cards += f'''
             <div class="img-card">
-              <img src="images/{encoded}" alt="{display}" loading="lazy" onerror="this.style.opacity='0.15'" />
-              <div class="img-label"><b>#{i+1}</b>{display}</div>
+              <img src="images/{encoded_url}" alt="{display_name}" loading="lazy" onerror="this.style.opacity='0.15'" />
+              <div class="img-label"><b>#{i+1}</b>{display_name}</div>
             </div>'''
 
-          # 4. Generate the full HTML (Using double braces {{ }} for CSS to avoid f-string conflicts)
+          # 4. Generate the full HTML 
+          # Note: We use {{ }} for CSS and JS to prevent Python f-string errors
           html = f"""<!DOCTYPE html>
           <html lang="en">
           <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
             <title>Image Gallery</title>
+            <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet"/>
             <style>
               *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
               :root{{
@@ -69,7 +91,6 @@
                 transform:translateY(-50%);color:var(--muted);font-size:1rem;pointer-events:none;
               }}
               main{{padding:2rem}}
-              #status{{font-size:0.75rem;color:var(--muted);margin-bottom:1.5rem}}
               #gallery{{columns:5 180px;column-gap:10px}}
               .img-card{{
                 break-inside:avoid;margin-bottom:10px;background:var(--surface);
@@ -111,7 +132,6 @@
             <div class="stats"><b>{len(files)}</b> / {len(files)} images</div>
           </header>
           <main>
-            <div id="status">{len(files)} images loaded</div>
             <div id="gallery">{cards}</div>
             <div id="empty"><h2>No images found</h2><p>Try a different search term</p></div>
           </main>
@@ -158,6 +178,10 @@
               if (!document.getElementById('lightbox').classList.contains('open')) return;
               if (e.key === 'Escape') closeLightbox();
             }});
+            
+            document.getElementById('lightbox').addEventListener('click', e => {{
+              if (e.target === document.getElementById('lightbox')) closeLightbox();
+            }});
           </script>
           </body>
           </html>"""
@@ -166,3 +190,11 @@
             f.write(html)
           print(f"✅ index.html generated with {len(files)} images")
           PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html images/images.json
+          git diff --cached --quiet || git commit -m "chore: fix image encoding and update gallery"
+          git push
